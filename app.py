@@ -172,6 +172,12 @@ def format_currency(value: float, decimals: int = 2) -> str:
     return f"{sign}${abs(value):,.{decimals}f}"
 
 
+def format_markdown_currency(value: float, decimals: int = 2) -> str:
+    """Format currency without letting Markdown treat dollars as math."""
+
+    return format_currency(value, decimals).replace("$", r"\$")
+
+
 def format_probability(value: float, decimals: int = 1) -> str:
     """Convert a decimal probability to a percentage string."""
 
@@ -184,7 +190,8 @@ def apply_plot_style(fig: go.Figure, title: str, height: int = 430) -> go.Figure
     fig.update_layout(
         title={"text": title, "x": 0.02, "xanchor": "left"},
         height=height,
-        margin={"l": 32, "r": 24, "t": 72, "b": 42},
+        # Leave enough room for both the chart title and a horizontal legend.
+        margin={"l": 32, "r": 24, "t": 104, "b": 42},
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         font={"family": "Arial, sans-serif", "color": "#10233f", "size": 13},
@@ -299,6 +306,7 @@ def make_distribution_chart(result: SimulationResult) -> go.Figure:
         line_dash="dot",
         annotation_text="Start",
         annotation_position="top left",
+        annotation_yshift=12,
     )
     fig.add_vline(
         x=summary["mean_ending_bankroll"],
@@ -306,6 +314,7 @@ def make_distribution_chart(result: SimulationResult) -> go.Figure:
         line_width=2,
         annotation_text="Mean",
         annotation_position="top right",
+        annotation_yshift=-10,
     )
     fig.update_xaxes(title="Ending bankroll", tickprefix="$", rangemode="tozero")
     fig.update_yaxes(title="Number of sessions")
@@ -559,32 +568,36 @@ simulation_tab, comparison_tab, math_tab, methods_tab = st.tabs(
 
 
 with simulation_tab:
-    st.subheader(f"{selected_strategy} strategy on a {wheel.lower()} wheel")
+    wheel_article = "an" if wheel == "American" else "a"
+    st.subheader(f"{selected_strategy} strategy on {wheel_article} {wheel} wheel")
     st.caption(
         f"{sessions:,} sessions × up to {spins} spins · seed {seed:,} · "
         f"{format_currency(base_bet, 0)} base bet"
     )
 
-    metric_columns = st.columns(5)
-    metric_columns[0].metric(
+    # Two rows keep full metric labels readable at ordinary laptop widths.
+    primary_metrics = st.columns(3)
+    primary_metrics[0].metric(
         "Average ending bankroll",
         format_currency(selected_summary["mean_ending_bankroll"]),
         delta=format_currency(selected_summary["mean_profit"]),
     )
-    metric_columns[1].metric(
+    primary_metrics[1].metric(
         "Finished ahead",
         format_probability(selected_summary["probability_ahead"]),
     )
-    metric_columns[2].metric(
+    primary_metrics[2].metric(
         "Lost entire bankroll",
         format_probability(selected_summary["probability_ruin"]),
         delta=None,
     )
-    metric_columns[3].metric(
+
+    secondary_metrics = st.columns(2)
+    secondary_metrics[0].metric(
         "Average dollars wagered",
         format_currency(selected_summary["mean_total_wagered"], 0),
     )
-    metric_columns[4].metric(
+    secondary_metrics[1].metric(
         "Profit volatility",
         format_currency(selected_summary["profit_sd"]),
         help="Standard deviation of complete-session profit.",
@@ -593,13 +606,13 @@ with simulation_tab:
     expected_action_profit = selected_summary["theory_profit_from_action"]
     st.info(
         f"The simulation produced an average profit of "
-        f"**{format_currency(selected_summary['mean_profit'])}**. Based on the "
+        f"**{format_markdown_currency(selected_summary['mean_profit'])}**. Based on the "
         f"{format_probability(theory['house_edge'], 2)} house edge and the average "
         f"amount wagered, the mathematical expectation is "
-        f"**{format_currency(expected_action_profit)}** per session. The 95% Monte "
+        f"**{format_markdown_currency(expected_action_profit)}** per session. The 95% Monte "
         f"Carlo interval for the estimated mean is "
-        f"**{format_currency(selected_summary['mc_ci_low'])} to "
-        f"{format_currency(selected_summary['mc_ci_high'])}**."
+        f"**{format_markdown_currency(selected_summary['mc_ci_low'])} to "
+        f"{format_markdown_currency(selected_summary['mc_ci_high'])}**."
     )
 
     chart_left, chart_right = st.columns(2)
@@ -750,7 +763,7 @@ with math_tab:
             rf"E[X]={theory['expected_value_per_dollar']:.5f}\text{{ dollars per dollar wagered}}"
         )
         st.write(
-            f"A one-dollar {wheel.lower()} roulette bet therefore loses "
+            f"A one-dollar {wheel} roulette bet therefore loses "
             f"**{format_currency(theory['house_edge'])} on average**, or "
             f"**{format_probability(theory['house_edge'], 2)}** of every dollar wagered."
         )
@@ -800,7 +813,7 @@ with methods_tab:
         (
             "Random process",
             "Each spin is an independent Bernoulli trial. A win returns the amount "
-            "wagered as profit; any red, black, or green losing result loses the stake.",
+            "wagered as profit; a losing color or green pocket forfeits the stake.",
         ),
         (
             "Controlled comparison",
